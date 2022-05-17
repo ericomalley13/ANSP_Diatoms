@@ -1,3 +1,5 @@
+#Using the `plotLeaflet()` function definition in `neotoma2` and removing clustering. 
+
 #' @title plotLeaflet
 #' @description Plot sites on a leaflet map
 #' @param object Sites object to plot

@@ -1,3 +1,7 @@
+#ids - site ids
+#previousmap - the previous map made using plotleaflet_modified
+#circlecolor - the color hex code for the circle marker
+
 add_dataset_leaflet <- function(ids, previousmap, circlecolor) {
   
   sites_ids <- get_sites(ids)
