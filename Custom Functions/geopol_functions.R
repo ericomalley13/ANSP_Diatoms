@@ -13,11 +13,22 @@ geopol_form <- function(x) {
 ########## geopol(y)
 
 
-geopol <- function(x) {
-  states <- purrr::map(x, function(y) {
+geopol_state <- function(x) {
+  state <- purrr::map(x, function(y) {
     site <- get_sites(y)
     dls <- get_downloads(site)
     dls[[1]]@geopolitical[[1]][[2]]
+  })
+  as.data.frame(x,(unlist(state))) %>%
+    rename(siteid = x) %>%
+    print()
+}
+
+geopol_county <- function(x) {
+  county <- purrr::map(x, function(y) {
+    site <- get_sites(y)
+    dls <- get_downloads(site)
+    dls[[1]]@geopolitical[[1]][[3]]
   })
   as.data.frame(x,(unlist(states))) %>%
     rename(siteid = x) %>%

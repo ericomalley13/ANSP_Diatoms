@@ -11,9 +11,11 @@ pc_abun <- function(dl_object) {
   sampleid <- samp$sampleid
   lat <- samp$lat
   long <- samp$long
+  depth <- samp$depth
+  age <- samp$age
   
   
-  countDF <- data.frame(lat, long, siteid, sitename, datasetid, sampleid, taxa, count) %>%
+  countDF <- data.frame(lat, long, siteid, sitename, datasetid, sampleid, taxa, count, age, depth) %>%
     group_by(sampleid) %>%
     mutate(count_pct = count*100 / sum(count))
   return(countDF)
