@@ -1,0 +1,981 @@
+---
+title: "21 July 2022 - 29 July 2022"
+author: "Eric O'Malley"
+date: "29 July 2022"
+output: 
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 3
+vignette: >
+  %\VignetteIndexEntry{The neotoma2 R Package}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  eval = TRUE
+)
+```
+
+```{r setup, message=FALSE}
+library(neotoma2)
+library(dplyr)
+library(purrr)
+library(sf)
+library(tidyverse)
+library(rioja)
+library(leaflet)
+library(leaflegend)
+```
+
+Work done over 21 July 2022 - 29 July 2022
+
+# OVERVIEW / ACCOMPLISHED
+
+
+- 1. Successful (I think) stratigraphic plotting (multiple taxa one site AND one taxa multiple sites). Solid understanding of manipulating the graph using **ggplot**. Stratigraphic plot made using **rioja** as well, unsure how to interpret. The rioja ones still have some issue with formatting the visuals.
+  - a. See Question 1. Easy fix to incorporate
+  
+- 2. While going through the EPD Binder examples, there was a section on taxa harmonization. I've modified that code for a diatom example and placed it within the "Diatom_Taxa.Rmd"
+
+- 3. Also from the EPD Binder, useful code on transforming data (obtained from `samples()`) from the long format its given to a wide format. The code is used in the data retrieval steps for the stratigraphic diagrams, but I've also included this code within the code I started just prior to your vacation, which was data retrieval using an aggregate dataset. The code now starts from an excel file **to** having count data in both long and wide formats.
+
+- 4. Leaflet -- Made an example map plotting two different variables (abundance & pH). I'm unsure of how to make it visually appealing with enough of a contrast between the two. I've figured out some things that I think can help me with the SHINY app.
+
+- 5. Added some code chunks to Diatoms_analysis.Rmd & Diatoms_neo2.Rmd that I thought were useful. Mostly involved data transformation. Did not add any of the below code into those R markdowns yet.
+
+
+
+# QUESTIONS
+
+- 1. Percent Abundance: This should be calculated based each sample? I just need clarification for how I should approach this for the stratigraphic diagrams. Should I calculate percent abundance as soon as I get the output from `samples()`? So essentially all the counts in one sample (a single sampleid) should add up to 100%? I know we had this down, but i've been looking at too many pollen examples and I'm all messed up.
+
+- 2. As you can see in the ggplot strat example, I chose 4 sites that all contained 1 taxa I manually found in the 4 datasets. The counts varied wildly which is not good for comparing in these stratigraphic diagrams. Did Simon say what the best way to solve this was?
+
+# EPD BINDER
+
+## Taxa Harmonization
+
+I've made changes to the "Diatom_taxa.Rmd" to include code on Taxa Harmonization. This code was obtained from the EPD Binder. I know this was not on the list, but it was one of the first steps in the process Simon goes through.
+
+### Data Retrieval
+
+The following code chunk is used in most of the code below
+
+```{r data retrieval}
+# polygon obtained from http://geojson.io/#map=5/42.049/-75.894
+ne <- '{"type": "Polygon",
+        "coordinates": [[
+            [-80.5517578125,
+              39.70718665682654],
+            [-66.7529296875,
+              39.70718665682654],
+            [-66.7529296875,
+              47.517200697839414],
+            [-80.5517578125,
+              47.517200697839414],
+            [-80.5517578125,
+              39.70718665682654]]]}'
+
+
+ne_datasets <- neotoma2::get_datasets(loc = ne[1], datasettype = "diatom",all_data = TRUE)
+
+ne_dl <- get_downloads(ne_datasets, all_data = TRUE)
+
+allSamp <- samples(ne_dl)
+
+```
+
+
+### Taxa Harmonization Step
+
+Code modified from Simon Goring and Socorro Dominguez Vidaña's [EPD Binder: Simple Workflow](https://open.neotomadb.org/EPD_binder/simple_workflow.html#)
+
+
+```{r, taxa harmonization}
+allSamp <- allSamp %>%
+  mutate(variablename = replace(variablename, 
+                                stringr::str_detect(variablename, "lirata.*"), 
+                                "Aulacoseira lirata"))
+#`mutate()` the column `variablename` so that any time we detect (str_detect()) a variablename that has lirata" (the .* represents a wildcard for any character [.], zero or more times [*]) we replace() it with the character string "Aulacoseira lirata"
+
+original_taxa_list <- neotoma2::taxa(ne_dl)
+# `taxa()` can be used to get the original list of taxa to compare changes.
+
+changed <- unique(allSamp$variablename)
+original <- original_taxa_list$variablename
+
+setdiff(original, changed)
+#displays what taxa were changed
+```
+
+##Data Manipulation
+
+```{r, data manipulation for diagrams}
+#Get a singular site, select only taxa identified from diatom cores
+## In this case its Upper Wallface Pond
+plottingSite <- ne_dl[[1]]
+
+# "plottingTaxa" is the taxa we want to plot. The code currently gets the 10 taxa that appears in the most samples
+# (REPLACE WITH FILTERING BY PERCENT ABUNDANCE (IE: WHEN ABUNDANCE IS >5%)) CODE FOUND IN OLDER STRATIGRAPHIC CODE
+plottingTaxa <- neotoma2::taxa(plottingSite) %>%
+  arrange(desc(samples)) %>% 
+  head(n = 10)
+
+# The counts from Upper Wallface Pond are filtered to only have information from
+# the taxa we determined that we wanted in "plottingTaxa"
+shortSamples <- samples(plottingSite) %>% 
+  filter(variablename %in% plottingTaxa$variablename)
+
+# Transform to proportion values. 
+# **IM UNSURE IF WE SHOULD DO THIS FOR DIATOMS (PERCENT ABUNDANCE INSTEAD?)**
+onesite <- shortSamples %>%
+  group_by(age) %>%
+  mutate(diatomcount = sum(value, na.rm = TRUE)) %>%
+  group_by(variablename) %>% 
+  mutate(prop = value / diatomcount) %>% 
+  arrange(desc(age))
+
+# Spread the data to a "wide" table, with taxa as column headings.
+widetable <- onesite %>%
+  dplyr::select(age, variablename, prop) %>%
+  mutate(prop = as.numeric(prop))
+
+counts <- tidyr::pivot_wider(widetable,
+                             id_cols = age,
+                             names_from = variablename,
+                             values_from = prop,
+                             values_fill = 0)
+```
+
+## Rioja Stratigraphic Plot
+
+The following `strat.plot()` example is based off of the EPD binder
+
+```{r, rioja strat, warning=FALSE, out.width = '100%'}
+clust <- rioja::chclust(dist(sqrt(counts)),
+                        method = "coniss")
+plot <- rioja::strat.plot(counts[,-1] * 100, yvar = counts$age,
+                  title = ne_dl[[1]]$sitename,
+                  ylabel = "Calibrated Years BP",
+                  xlabel = "Diatom (%)",
+                  y.rev = TRUE,
+                  clust = clust,
+                  wa.order = "topleft", scale.percent = TRUE)
+
+```
+
+The following `strat.plot()` example is based off of Benjamin Bell's Blog
+
+```{r, another rioja example, out.width = '100%'}
+#https://www.benjaminbell.co.uk/2018/02/pollen-diagrams-in-r-using-rioja-part-1.html
+#code chunk same as above EXCEPT for not adding "prop" variable and leaving it as NISP counts
+
+onesite2 <- shortSamples %>%
+  arrange(desc(age))
+
+widetable2 <- onesite2 %>%
+  dplyr::select(age, variablename, value)
+
+counts2 <- tidyr::pivot_wider(widetable2,
+                             id_cols = age,
+                             names_from = variablename,
+                             values_from = value,
+                             values_fill = 0)
+
+#below is the Rioja plot that I could get to produce the best plot after fiddling with it for some time.
+
+strat.plot(counts2[,-1], yvar = counts$age, y.rev=TRUE, plot.line=FALSE, plot.poly=TRUE, plot.bar=TRUE, col.bar="black", col.poly="green", col.poly.line="black", scale.percent=TRUE, xSpace=0.01, x.pc.lab=TRUE, x.pc.omit0=TRUE, las=2,srt.xlabel=25,title="Upper Wallface Pond Diatoms", ylabel="Age (cal yr BP)",cex.yaxis=0.6, cex.axis=0.6,cex.xlabel=0.8,ylabPos=3, wa.order = "topleft")
+
+#ISSUES: col.poly.line="black" does not work. I assume no bottom x label because they are expected to be in percents? Awkward angle for taxa labels, only way to avoid hitting title.
+
+
+
+#To save to view the whole graph: Go to Export (in plot viewer) -> Save as PDF -> 14 in by 14 in (these dimensions seem to work best after messing around with it)
+```
+
+## GGPLOT - Multiple Sites (1 taxa) 
+
+By using what I've learned from above using mostly Simon's code (altered for Diatoms) I will try and create the plot for multiple sites.
+
+```{r, multiple sites strat, out.width = '100%'}
+#plottingSites <- ne_dl[[1:5]]
+
+plottingSite1 <- ne_dl[[1]]
+plottingSite2 <- ne_dl[[2]]
+#Site 3 didn't seem like a good example
+plottingSite4 <- ne_dl[[4]]
+plottingSite5 <- ne_dl[[5]]
+
+#view(neotoma2::taxa(plottingSite1))
+#view(neotoma2::taxa(plottingSite2))
+#view(neotoma2::taxa(plottingSite4))
+#view(neotoma2::taxa(plottingSite5))
+
+#After viewing the taxa content of the 4 sites, I found that Achnanthes marginulata
+# was present in all 4
+
+# Now I will filter each site by Achnanthes marginulata
+
+UWall_AM_counts <- samples(plottingSite1) %>% 
+  dplyr::filter(variablename == "Achnanthes marginulata")
+
+Deep_AM_counts <- samples(plottingSite2) %>%
+  dplyr::filter(variablename == "Achnanthes marginulata")
+
+Georgia_AM_counts <- samples(plottingSite4) %>%
+  dplyr::filter(variablename == "Achnanthes marginulata")
+
+Blue_AM_counts <- samples(plottingSite5) %>%
+  dplyr::filter(variablename == "Achnanthes marginulata")
+
+ALL_AM_counts <- rbind(UWall_AM_counts, Deep_AM_counts, Georgia_AM_counts, Blue_AM_counts)
+
+```
+
+```{r}
+ggplot_mult <- ALL_AM_counts %>%
+  ggplot(aes(y = round(ALL_AM_counts$age, digits = 0), x = value)) +
+  geom_path() + #adds lines between each value
+  geom_point() + #adds points
+  facet_grid(~sitename, scales = "free_x", space = "free_x") + #`facet_wrap()` is what each graph will represent. `scales` is used to give each graph a its own scaled axis (default will scale every graph to same x axis). "free_x" and "free_y" are used seperately to seperate the x axis and y axis respectively.
+  scale_y_reverse() +
+  labs(x = "Count (NISP)", y = "Age (cal yr BP)") +
+  theme_bw() +
+  theme(
+    # rotate the facet labels
+    strip.text.x = element_text(angle = 45, hjust = 0, vjust = 0), 
+    # turn off the label background
+    strip.background = element_blank(),
+    axis.line = element_line(color='black'),
+    #plot.background = element_blank(),
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    #panel.border = element_blank()
+  )
+
+ggplot_mult
+```
+
+```{r}
+###########################################################
+species_plot_grob <- ggplotGrob(ggplot_mult)
+for(i in which(grepl("strip-t", species_plot_grob$layout$name))){
+  species_plot_grob$grobs[[i]]$layout$clip <- "off"
+}
+
+# needed to draw the modified plot_grob
+grid::grid.draw(species_plot_grob)
+```
+
+ I use this function of mine in the next chunks
+```{r percent abundance function, echo=FALSE}
+pc_abun <- function(dl_object) {
+  
+  samp <- samples(dl_object)
+  taxa <- samp$variablename
+  count <- samp$value
+  sitename <- samp$sitename
+  datasetid <- samp$datasetid
+  siteid <- samp$siteid
+  sampleid <- samp$sampleid
+  lat <- samp$lat
+  long <- samp$long
+  
+  
+  countDF <- data.frame(lat, long, siteid, sitename, datasetid, sampleid, taxa, count) %>%
+    group_by(sampleid) %>%
+    mutate(count_pct = count*100 / sum(count))
+  return(countDF)
+}
+```
+
+
+
+# leaflet
+
+The goal of the code below is to not only show percent abundance and location, but add other variables (like WC variables). Previously I tried varying the size by abundance and the color by WC characteristic but that didn't work. Here I will try adding either:
+- 2 different markers that would not clash (visually confusing)
+- A different approach using conditional statements. If the characteristic is above     a certain level (maybe something deemed high) the color will change. This works     differently than my previous attempt due to continuous vs categorical values
+    being treated differently.
+
+I also want to add more options to the popup box, such as actual abundance and WC values. This could also be used for the SHINY app. 
+
+
+```{r, two variable leaflet}
+#This is using the "EVERYTHING" sheet in the aggregare dataset as of 7-20-22
+DREXEL_agg <- read.csv("Aggregate Dataset CSV 7-29-22.csv")
+colnames(DREXEL_agg) <- c("drexelid","siteid","sitename","diatom_datasetid", "wc_datasetid")
+
+with_wc_agg <- DREXEL_agg[!is.na(DREXEL_agg$wc_datasetid),]
+
+diatom_datasetid <- tail(with_wc_agg$diatom_datasetid,50) #for some reason I got an error trying to do `head()` instead of `tail()`. Possible wrong datasetid towards beginning.
+
+wc_datasetid <- tail(with_wc_agg$wc_datasetid,50)
+
+diatom_dl <- get_datasets(diatom_datasetid,all_data = TRUE) %>%
+  get_downloads()
+
+wc_dl <- get_datasets(wc_datasetid,all_data = TRUE) %>%
+  get_downloads()
+
+diatom_taxa <- pc_abun(diatom_dl) %>%
+  dplyr::filter(taxa == "Achnanthes minutissima") %>%
+  arrange(siteid)
+
+wc_variable <- samples(wc_dl) %>%
+  select('siteid', 'variablename','value') %>%
+  dplyr::filter(variablename == "pH") %>%
+  arrange(siteid)
+
+wc_diatom <- merge(diatom_taxa, wc_variable)
+```
+
+```{r}
+getColor <- function(wc_diatom) {
+  sapply(wc_diatom$value, function(value) {
+  if(value <= 8.2) {
+    "red"
+  } else {
+    "blue"
+  }})
+}
+
+```
+
+```{r, editing plotleaflet function, out.width = '100%'}
+getColor <- function(wc_diatom) {
+  sapply(wc_diatom$value, function(value) {
+  if(value <= 8.2) {
+    "red"
+  } else {
+    "blue"
+  }})
+}
+
+symbols <- makeSizeIcons(values = wc_diatom$count_pct,
+                          shape = 'circle',
+                          color = 'black',
+                          fillColor = getColor(wc_diatom),
+                          #pal = numPal,
+                          opacity = .7,
+                          fillOpacity = .5,
+                          baseSize = 15)
+            
+             map1 <- leaflet(wc_diatom) %>%
+              addProviderTiles(providers$Stamen.TerrainBackground) %>%
+              addTiles() %>%
+              addMarkers(icon = symbols, lng = wc_diatom$long, lat = wc_diatom$lat,
+                               popup = paste0("<b>", wc_diatom$sitename,
+                                              "</b><br><b>pH:</b> ",
+                                              wc_diatom$value,
+                                              "<br><a href=http://apps.neotomadb.org/explorer/?siteids=",
+                                              wc_diatom$siteid,
+                                              ">Explorer Link</a>"),
+                               options = markerOptions(riseOnHover = TRUE)) %>%
+              addLegendSize(values = wc_diatom$count_pct,
+                fillColor = c('white'),
+                color = 'black',
+                #pal = numPal,
+                title = "A. minutissima % Abundance",
+                baseSize = 15,
+                shape = 'circle',
+                orientation = 'horizontal',
+                opacity = .7,
+                fillOpacity = .3,
+                position = 'bottomright',
+                breaks = 5) #%>%
+               # addLegend(values = c())
+             
+map1
+```
+
+
+
+
+
+```{r, adding icon for WC variable, out.width = '100%'}
+numPal <- colorNumeric('magma', wc_diatom$value)
+
+symbols2 <- makeSizeIcons(values = wc_diatom$value,
+                                     shape = 'plus',
+                                     color = "black",
+                                     pal = numPal,
+                                    #fillColor = ifelse(wc_diatom$value <= 8.0,'blue','red'),
+                                     opacity = 1,
+                                     baseSize = 12)
+  map1 %>%
+    addMarkers(icon = symbols2, lng = wc_diatom$long, lat = wc_diatom$lat, popup = paste0("<b>", wc_diatom$sitename,
+                                              "</b><br><b>pH:</b> ",
+                                              wc_diatom$value,
+                                              "<br><a href=http://apps.neotomadb.org/explorer/?siteids=",
+                                              wc_diatom$siteid,
+                                              ">Explorer Link</a>"),
+                               options = markerOptions(riseOnHover = TRUE)) %>%
+    #Cannot get a working legend for WC
+    
+    addLegendSize(values = wc_diatom$value,
+                #color = "black",
+                pal = numPal,
+                #fillColor = ifelse(wc_diatom$value <= 8.0,'blue','red'),
+                title = "pH",
+                shape = 'plus',
+                orientation = 'horizontal',
+                opacity = 1,
+                fillOpacity = 1,
+                position = 'bottomright',
+                breaks = 2,
+                baseSize = 12)
+```
+
+```{r, more in depth stratigraphic diagram filtering}
+# STEP 1: Getting data out of NEOTOMA
+
+test <- get_datasets(datasettype = "diatom", all_data = TRUE)
+
+core_1 <- get_datasets(datasettype = "diatom", limit = 300) %>%
+  get_downloads()
+
+core_1_samp <- samples(core_1)
+
+core_2 <- get_datasets(datasettype = "diatom", limit = 300, offset = 301) %>%
+  get_downloads()
+
+core_2_samp <- samples(core_2)
+
+core_3 <- get_datasets(datasettype = "diatom", limit = 300, offset = 602) %>%
+  get_downloads()
+
+core_3_samp <- samples(core_3)
+
+core_4 <- get_datasets(datasettype = "diatom", limit = 179, offset = 903) %>%
+  get_downloads()
+
+core_4_samp <- samples(core_4)
+
+#siteid: 26515
+#will not download, skip
+
+core_5 <- get_datasets(datasettype = "diatom", limit = 300, offset = 1100) %>%
+  get_downloads()
+
+core_5_samp <- samples(core_5)
+
+all_diatoms <- rbind(core_1_samp,core_2_samp,core_3_samp,core_4_samp,core_5_samp)
+
+#twenty_diatoms <- get_datasets(datasettype = "diatom", limit = 20) %>%
+  #get_downloads() %>%
+  #samples() #BECAUSE ALL_DIATOMS TOO LARGE, TESTING THIS.
+#IF TO GO BACK, REPLACE twenty_diatoms with all_diatoms
+###############################################################################
+# OPTIONAL STEP: COMBINING WATER CHEMISTRY DATA
+core_sites <- unique(all_diatoms$siteid) %>%
+  get_sites()
+
+core_wc <- get_datasets(core_sites)
+# %>% neotoma2::filter(datasettype == ""water chemistry")
+
+wc_samp <- get_downloads(core_wc) %>%
+  samples() %>%
+  dplyr::filter(datasettype == "water chemistry") %>%
+  arrange(.,siteid) %>%
+  select(-datasetnotes,-database,-taxongroup,-ecologicalgroup,-symmetry,-context,-sitenotes,-description)
+
+#colnames(wc_samp) <- c("siteid","water_chemistry","wc_units","wc_value")
+
+some_diatoms_less <- some_diatoms %>%
+  arrange(.,siteid) %>%
+  select(-datasetnotes,-database,-taxongroup,-ecologicalgroup,-symmetry,-context,-sitenotes,-description)
+
+wc_diat <- rbind(wc_samp, some_diatoms_less) %>%
+  arrange(.,siteid)
+
+testing <- wc_samp %>%
+  group_by(siteid) %>%
+  summarize(length(unique(datasetid)))
+
+test2 <- list(wc_samp,some_diatoms_less)
+
+#test <- merge(wc_samp,some_diatoms_less, by = "siteid")
+
+
+
+###############################################################################
+#STEP 2: Filtering out TOP - BOTTOM samples
+all_diatom_no_samp <- all_diatoms %>%
+  group_by(datasetid) %>%
+  summarize(no_samples = length(unique(sampleid)))
+
+ind <- (all_diatom_no_samp$no_samples <= 3)
+okay <- all_diatom_no_samp[!ind, ]
+
+newdf <- all_diatoms[all_diatoms$datasetid %in% okay$datasetid,]
+
+###############################################################################
+#STEP 3: Percent Abundance calculation
+newdf2 <- newdf %>%
+  group_by(sampleid) %>%
+  mutate(count_pct = value*100 / sum(value))
+
+newdf3 <- newdf2[complete.cases(newdf2$age),] #gets rid of any rows that contain NAs in age column
+
+###############################################################################
+# Step 4: Taxa Harmonization
+newdf4 <- newdf3 %>%
+  mutate(variablename = replace(variablename, 
+                                stringr::str_detect(variablename, "stelligera.*"), 
+                                "Discostella stelligera"))
+
+original_taxa <- unique(newdf3$variablename)
+new_taxa <- unique(newdf4$variablename)
+
+setdiff(original_taxa, new_taxa)
+#[1] "Cyclotella stelligera"           "Cyclotella pseudostelligera"    
+#[3] "Discostella pseudostelligera"    "Discostella stelligera var. ?"  
+#[5] "Cyclotella stelligera (complex)"
+###############################################################################
+# Step 5: Combining % Abundance values after taxa harmonized
+
+newdf5 <- newdf4 %>%
+  dplyr::filter(variablename == "Discostella stelligera")
+
+#n_occur <- data.frame(table(newdf5$variablename))
+#n_occur[n_occur$Freq > 1,] #useful if filtering for more than one taxa. Takes only taxa that occur in more than one samples
+
+ok <- aggregate(value ~ sampleid + variablename, FUN = sum, data = newdf5)
+
+test <- merge(ok,newdf5,by = "sampleid")
+
+test2 <- test %>%
+  select(-value.y, -variablename.y)
+
+#test3 <- test2[!duplicated(test2),]
+
+test3 <- test2[!duplicated(test2[c('sampleid')]), ] %>%
+  rename(value = value.x) %>%
+  rename(variablename = variablename.x)
+
+##############################################################################
+# Step 6: Filters out "collection date" age models
+testing <- test3 %>%
+  group_by(datasetid) %>%
+  distinct(age)
+
+testing2 <- testing %>%
+  filter(length(datasetid) == 1)
+
+testing2 <- as.numeric(testing2$datasetid)
+
+new_test3 <- test3 %>%
+  dplyr::filter(!(datasetid %in% testing2))
+
+###############################################################################
+# Step #: changing to calendar years instead of BP
+
+new_test4 <- new_test3 %>%
+  mutate(age = 1950-age)
+  
+###############################################################################
+# Step 7: filtering for a fixed range of ages
+
+fixed_1 <- new_test4 %>%
+  dplyr::filter(new_test3$age >= 1700 & new_test3$age <= 2020)
+
+#fixed_2 <- head(fixed_1, 200)
+
+fixed_2 <- fixed_1 %>%
+  dplyr::filter(!(datasetid == 22305))
+  
+
+eyee <- fixed_2 %>%
+  group_by(sitename) %>%
+  summarise(length(unique(datasetid))) #checking to see what sites have more than 1 diatom core dataset
+
+##############################################################################
+# Step #: Modifying data so that Strat shows 0% abun at other ages counted
+
+newdf4$NEW <- ifelse(newdf4$variablename != "Discostella stelligera", 0, newdf4$count_pct)
+
+okayy <- newdf4 %>%
+  group_by(datasetid) %>%
+  summarize(unique(age))
+
+#colnames(okayy) <- c("datasetid", "age")
+
+okayy2 <- merge(okayy, fixed_2, all.x = TRUE)
+
+okayy3 <- okayy2 %>%
+  group_by(datasetid) %>%
+  mutate(count_pct = ifelse(is.na(count_pct), 0, count_pct))
+
+  
+okayy4 <- okayy3 %>%
+  group_by(datasetid) %>%
+  summarise(sum(count_pct))
+
+colnames(okayy4) <- c("datasetid", "count_pct")
+
+okayy5 <- okayy4 %>%
+  dplyr::filter(count_pct == 0)
+
+okayy_fin <- okayy3 %>%
+  dplyr::filter(!(datasetid %in% okayy5$datasetid)) 
+
+okayy_fin_2 <- okayy_fin %>%
+  dplyr::filter(age >= 1700 & age <= 2020)
+
+
+#########################################################################
+# Step #: Filtering for sites using a max abundance threshold
+site_max_abun <- okayy_fin_2 %>%
+  group_by(sitename) %>%
+  summarise(max_abund = max(count_pct)) %>%
+  filter(max_abund >= 7.3) %>%
+  arrange(max_abund) %>%
+  pull(sitename)
+
+okayy_fin_max <- okayy_fin_2 %>%
+  filter(sitename %in% site_max_abun) %>%
+  mutate(sitename = factor(sitename, levels = site_max_abun)) %>%
+  arrange(sitename)
+
+##############################################################################
+# THIS MAKES THE GGPLOT
+ggplot_stelligera <- okayy_fin_2 %>%
+  ggplot(aes(y = round(age, digits = 0), x = count_pct)) +
+  ggtitle("Discostella stelligera") + #adds title
+  geom_path() + #adds lines between each value
+  geom_point() + #adds points
+  facet_wrap(~sitename, scales = "free_x") + #`facet_wrap()` is what each graph will represent. `scales` is used to give each graph a its own scaled axis (default will scale every graph to same x axis). "free_x" and "free_y" are used seperately to seperate the x axis and y axis respectively.
+  scale_y_reverse() +
+  labs(x = "Abundance (%)", y =
+         #"Age (cal yr BP)"
+         "Age") +
+  theme_bw()
+
+
+ggsave('stelligera9.jpeg')
+
+# ggsave('stelligera8.jpeg', height = 100, width = 13, units = "in", limitsize = FALSE) # for a large amounts of facets where u can scroll the image
+
+
+
+##############################################################################
+#setdiff(test$value.x,test$value.y)
+
+#newdf5 <- newdf4 %>%
+  #group_by(sampleid) %>%
+  #aggregate(count_pct ~ variablename, sum)
+
+#newdf5 <- aggregate(newdf4$count_pct, by = list(newdf4$sampleid, newdf4$variablename), FUN = sum)
+
+#newdf6 <- merge(newdf5, newdf4, all.y = TRUE)
+  #aggregate(count_pct, by = list(as.numeric(variablename)), FUN = sum, drop = FALSE)
+
+#df4_filt <- newdf4 %>%
+  #dplyr::filter(variablename == "Discostella stelligera")
+
+#df5_filt <- newdf5 %>%
+  #dplyr::filter(variablename == "Discostella stelligera")
+
+#filter out datasets with 3 or less samples
+#use Stelligera (use taxa harmonization code)
+#facet_wrap by datasetid
+```
+
+
+```{r}
+states <- purrr::map(.$siteid, function(y) {
+                                      site <- get_sites(y)
+                                      dls <- get_downloads(site)
+                                      umm@sites[[1]]@collunits[[1]]@colldate
+                                      })
+            as.data.frame(x,(unlist(states))) %>%
+            rename(siteid = x) %>%
+            print()
+
+################################################################################
+
+publicationss <- purrr::map(datasetidss, function(y) {
+                                      pubs <- get_publications(datasetid = y) %>%
+                                        as.data.frame() %>%
+                                        .$citation %>%
+                                        .[1]
+                                       Pubs_short <- substr(pubs,1,100)
+})
+  
+publication_df <- unlist(publicationss) 
+%>%
+colnames() <- "publication"
+
+uhh <- as.data.frame(datasetidss,(unlist(publicationss)))
+ colnames(uhh) <- c("publication", "datasetid")
+
+                                     
+datasetidss <- head(unique(some_diatoms$datasetid),7)   
+
+```
+
+```{r}
+library(plyr)
+library(gridExtra)
+library(ggforce)
+
+ ggplot_stelligera <- okayy_fin_2 %>%
+  ggplot(aes(y = round(age, digits = 0), x = count_pct)) +
+  ggtitle("Discostella stelligera") + #adds title
+  #geom_path() + #adds lines between each value
+  #geom_point() + #adds points
+  geom_bar(stat = "identity") + # adds bars
+  coord_flip() + # makes bars horizontal
+  geom_hline(yintercept=100) +
+  facet_wrap_paginate(~sitename + datasetid, #function that splits facets into multiple pages
+                      nrow = 2, 
+                      ncol = 8, 
+                      scales = "free_x") + #`facet_wrap()` is what each graph will represent. `scales` is used to give each graph a its own scaled axis (default will scale every graph to same x axis). "free_x" and "free_y" are used seperately to seperate the x axis and y axis respectively.
+  scale_y_reverse() +
+  labs(x = "Abundance (%)", y =
+         #"Age (cal yr BP)"
+         "Age") +
+  theme_bw()
+
+#RUN ABOVE CODE BEFORE DOING BELOW
+
+
+
+my_list <- list() #empty list needed to put loop output to a PDF
+
+required_n_pages <- n_pages(ggplot_stelligera)
+
+for(i in 1:required_n_pages){
+  ggplot_stelligera <- okayy_fin_2 %>%
+  ggplot(aes(y = age, x = count_pct)) +
+  ggtitle("Discostella stelligera") + #adds title
+  #geom_path() + #adds lines between each value
+  #geom_point() + #adds points
+  geom_bar(stat = "identity") + # adds bars
+  coord_flip() + # makes bars horizontal
+  geom_hline(yintercept=100) + #adds horizontal line
+  facet_wrap_paginate(~sitename + datasetid, #function that splits facets into multiple pages
+                      nrow = 2, 
+                      ncol = 8, 
+                      page = i, 
+                      scales = "free_x") + #`facet_wrap()` is what each graph will represent. `scales` is used to give each graph a its own scaled axis (default will scale every graph to same x axis). "free_x" and "free_y" are used seperately to seperate the x axis and y axis respectively.
+  scale_y_reverse() +
+  labs(x = "Abundance (%)", y =
+         #"Age (cal yr BP)"
+         "Age") +
+  theme_bw()
+
+  my_list[[i]] <- ggplot_stelligera #puts each output into a list for PDF function.
+  print(ggplot_stelligera) 
+}
+  
+ggsave(
+   filename = "plots12.pdf", 
+   plot = marrangeGrob(my_list, nrow=1, ncol=1), 
+   width = 9, height = 15
+)
+
+```
+
+```{r}
+#https://stackoverflow.com/questions/8751497/latitude-longitude-coordinates-to-state-code-in-r
+latlong_df <- data.frame(x = c(-102.5244,-100.62), y = c(41.77056, 42.626))
+
+
+library(sp)
+library(maps)
+library(maptools)
+
+lonlat_to_state_sp <- function(pointsDF) {
+    # Prepare SpatialPolygons object with one SpatialPolygon
+    # per state (plus DC, minus HI & AK)
+    states <- map('county', fill=TRUE, col="transparent", plot=FALSE) #change county to state to get only states
+    IDs <- sapply(strsplit(states$names, ":"), function(x) x[1])
+    states_sp <- map2SpatialPolygons(states, IDs=IDs,
+                     proj4string=CRS("+proj=longlat +datum=WGS84"))
+
+    # Convert pointsDF to a SpatialPoints object 
+    pointsSP <- SpatialPoints(pointsDF, 
+                    proj4string=CRS("+proj=longlat +datum=WGS84"))
+
+    # Use 'over' to get _indices_ of the Polygons object containing each point 
+        indices <- over(pointsSP, states_sp)
+
+    # Return the state names of the Polygons object containing each point
+    stateNames <- sapply(states_sp@polygons, function(x) x@ID)
+    stateNames[indices]
+}
+
+lonlat_to_state_sp(latlong_df)
+
+###############################################################################
+library(geonames)
+readLines(url("http://api.geonames.org/",open="r"))
+options(geonamesUsername= "eomalley") #Note you have to create a username one the website AND enable webservices on your geonames user account at https://www.geonames.org/manageaccount.
+
+options(geonamesUsername="eomalley")
+
+latlong_alt <- GNsrtm3(latlong_df$y[13],latlong_df$x[13])
+
+latlong_alt
+```
+
+# 1. ggplot (scatterplot) -> y axis is % abun, x axis is WC characteristic (each facet is a different WC variable)
+ -- try using all diatom cores in NE US as dataset.
+```{r}
+# polygon obtained from http://geojson.io/#map=5/42.049/-75.894
+ne <- '{"type": "Polygon",
+        "coordinates": [[
+            [-80.5517578125,
+              39.70718665682654],
+            [-66.7529296875,
+              39.70718665682654],
+            [-66.7529296875,
+              47.517200697839414],
+            [-80.5517578125,
+              47.517200697839414],
+            [-80.5517578125,
+              39.70718665682654]]]}'
+
+diat_samp <- neotoma2::get_datasets(loc = ne, datasettype = "diatom surface sample",limit = 300) %>%
+  get_downloads(., all_data = TRUE) %>%
+  samples() %>%
+  group_by(sampleid) %>%
+  mutate(count_pct = value*100 / sum(value)) %>%
+  select(units,value,count_pct,variablename,sampleid,datasetid,siteid,sitename,datasettype) #removing columns to make looking at the data easier, not needed
+
+new_diat_samp_2 <- diat_samp %>%
+  mutate(variablename = replace(variablename, 
+                                stringr::str_detect(variablename, "stelligera.*"), 
+                                "Discostella stelligera"))
+
+new_diat_samp_3 <- new_diat_samp_2 %>%
+  dplyr::filter(variablename == "Discostella stelligera") %>%
+  
+new_diat_samp_4 <- new_diat_samp_3 %>%
+  group_by(siteid) %>%
+  mutate(., avg_abun = mean(count_pct)) %>%
+  distinct(avg_abun, .keep_all = TRUE) %>%
+  select(-value,-count_pct)
+
+diat_sites <- unique(new_diat_samp_4$siteid)
+
+wc_samp_data <- get_sites(diat_sites) %>%
+  get_datasets() %>%
+  neotoma2::filter(datasettype == "water chemistry")
+
+wc_samples <- get_downloads(wc_samp_data) %>%
+  samples() %>%
+  select(units,value,variablename,sampleid,datasetid,siteid,sitename,datasettype)
+
+wc_samples$avg_abun = NA
+new_diat_samp_4$value = NA
+
+new_diat_samp_5 <- new_diat_samp_4 %>%
+  select(siteid,variablename,avg_abun)
+
+colnames(new_diat_samp_5) <- c("siteid", "taxa", "avg_abun")
+
+all_data_alt <- merge(wc_samples,new_diat_samp_5)
+
+all_data <- rbind(wc_samples,new_diat_samp_4) %>%
+  arrange(.,siteid)
+###############################################################################
+
+ggplot_wc_stel <- all_data_alt %>%
+  ggplot(aes(y = avg_abun, x = value)) +
+  ggtitle("Discostella stelligera") + #adds title
+  geom_path() + #adds lines between each value
+  geom_point() + #adds points
+  facet_wrap_paginate(~variablename, scales = "free_x") + #`facet_wrap()` is what each graph will represent. `scales` is used to give each graph a its own scaled axis (default will scale every graph to same x axis). "free_x" and "free_y" are used seperately to seperate the x axis and y axis respectively.
+  labs(x = "WC", y =
+         #"Age (cal yr BP)"
+         "Abun") +
+  theme_bw()
+
+
+my_list <- list() #empty list needed to put loop output to a PDF
+
+required_n_pages <- n_pages(ggplot_wc_stel)
+
+for(i in 1:required_n_pages){
+  ggplot_wc_stel <- all_data_alt %>%
+  ggplot(aes(y = avg_abun, x = value)) +
+  ggtitle("Discostella stelligera") + #adds title
+  #geom_path() + #adds lines between each value
+  geom_point() + #adds points
+  geom_smooth(method=lm, se=FALSE, col='red', size=1) +
+  #geom_bar(stat = "identity") + # adds bars
+  #coord_flip() + # makes bars horizontal
+  #geom_hline(yintercept=100) + #adds horizontal line
+  facet_wrap_paginate(~variablename, #function that splits facets into multiple pages
+                      nrow = 4, 
+                      ncol = 4, 
+                      page = 2, 
+                      scales = "free") + #`facet_wrap()` is what each graph will represent. `scales` is used to give each graph a its own scaled axis (default will scale every graph to same x axis). "free_x" and "free_y" are used seperately to seperate the x axis and y axis respectively.
+  #scale_y_reverse() +
+  labs(x = "WC", y =
+         #"Age (cal yr BP)"
+         "Abun") +
+  theme_bw()
+
+  my_list[[i]] <- ggplot_stelligera #puts each output into a list for PDF function.
+  print(ggplot_stelligera) 
+}
+```
+
+```{r}
+#[source](https://open.neotomadb.org/EPD_binder/simple_workflow.html)
+#[worldclim format](https://worldclim.com/formats1)
+library(raster)
+
+#STEP 1: desired count data
+ne <- '{"type": "Polygon",
+        "coordinates": [[
+            [-80.5517578125,
+              39.70718665682654],
+            [-66.7529296875,
+              39.70718665682654],
+            [-66.7529296875,
+              47.517200697839414],
+            [-80.5517578125,
+              47.517200697839414],
+            [-80.5517578125,
+              39.70718665682654]]]}'
+
+diat_samp_1 <- neotoma2::get_datasets(loc = ne, datasettype = "diatom surface sample",limit = 300) %>%
+  get_downloads(., all_data = TRUE) %>%
+  samples() %>%
+  filter(age < 50)
+
+#######################################################RASTER
+spatial <- sf::st_as_sf(diat_samp_1, 
+                        coords = c("long", "lat"),
+                        crs = "+proj=longlat +datum=WGS84")
+
+worldTmean <- raster::getData('worldclim', var = 'tmean', res = 10)
+#worldBio <- raster::getData('worldclim', var = 'bio', res = 10)
+
+spatial$tmean7 <- raster::extract(worldTmax, spatial)[,7] #This adds a column to the `data.frame` `spatial`, that contains the mean July temperature for each taxon at each site (all taxa at a site will share the same value).
+
+meansamp <- spatial %>% 
+  dplyr::group_by(siteid) %>% 
+  dplyr::summarise(tmean7 = mean(tmean7), .groups = 'keep')
+
+#######################################################PLOT
+
+ggplot_NE_taxa_tempdens <- ggplot() +
+  geom_density(data = spatial,
+               aes(x = round(tmean7 / 10, 0)), col = 2) +
+  facet_wrap(~variablename) +
+  geom_density(data = meansamp, aes(x = tmean7 / 10)) +
+  xlab("Mean July Temperature") +
+  ylab("Kernel Density")
+
+
+```
