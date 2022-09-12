@@ -65,7 +65,7 @@ I've made changes to the "Diatom_taxa.Rmd" to include code on Taxa Harmonization
 
 The following code chunk is used in most of the code below
 
-```{r data retrieval}
+```{r data retrieval, warning=FALSE}
 # polygon obtained from http://geojson.io/#map=5/42.049/-75.894
 ne <- '{"type": "Polygon",
         "coordinates": [[
@@ -95,7 +95,7 @@ allSamp <- samples(ne_dl)
 Code modified from Simon Goring and Socorro Dominguez Vidaña's [EPD Binder: Simple Workflow](https://open.neotomadb.org/EPD_binder/simple_workflow.html#)
 
 
-```{r, taxa harmonization}
+```{r, taxa harmonization, warning=FALSE}
 allSamp <- allSamp %>%
   mutate(variablename = replace(variablename, 
                                 stringr::str_detect(variablename, "lirata.*"), 
@@ -334,17 +334,6 @@ wc_variable <- samples(wc_dl) %>%
 wc_diatom <- merge(diatom_taxa, wc_variable)
 ```
 
-```{r}
-getColor <- function(wc_diatom) {
-  sapply(wc_diatom$value, function(value) {
-  if(value <= 8.2) {
-    "red"
-  } else {
-    "blue"
-  }})
-}
-
-```
 
 ```{r, editing plotleaflet function, out.width = '100%'}
 getColor <- function(wc_diatom) {
@@ -430,6 +419,11 @@ symbols2 <- makeSizeIcons(values = wc_diatom$value,
                 breaks = 2,
                 baseSize = 12)
 ```
+
+
+#GGPLOT FACETED STRATIGRAPHIC PLOTS
+
+This code also contains all of the filtering steps we discussed.
 
 ```{r, more in depth stratigraphic diagram filtering}
 # STEP 1: Getting data out of NEOTOMA
@@ -707,8 +701,7 @@ publicationss <- purrr::map(datasetidss, function(y) {
                                        Pubs_short <- substr(pubs,1,100)
 })
   
-publication_df <- unlist(publicationss) 
-%>%
+publication_df <- unlist(publicationss) %>%
 colnames() <- "publication"
 
 uhh <- as.data.frame(datasetidss,(unlist(publicationss)))
