@@ -10,7 +10,6 @@ editor_options:
 
 ```{r setup}
 library(neotoma2)
-library(neotoma)
 library(dplyr)
 library(purrr)
 library(sf)
@@ -876,26 +875,37 @@ final <- merge(new_NLAstatedf, NLA_2007_Excel, by = 'Neotoma Site ID')
 write.csv(final, file = "NLA_states_csv.csv")
 ```
 
-```{r plotting NE_NLA}
-#Agg #15
-#Handle: NLA-2007
-library(readxl)
-NLA_states_excel <- read_excel("C:/Users/eco37/Desktop/NLA_states_excel.xlsx", 
-                               col_types = c("numeric", "text", "text", 
-                                             "text", "numeric", "text", "numeric", 
-                                             "text", "text", "text", "text", "text", 
-                                             "text"))
 
-NE_NLA <- dplyr::filter(NLA_states_excel, State %in% c("Connecticut", "Maine", "Massachusetts", "New Hampshire", "New York", "New Jersey", "Rhode Island", "Vermont"))
 
-NE_NLA_ids <- NE_NLA$`Neotoma Site ID`
+## NE AGGREGATE DATASET DISTRIBUTION
 
-NE_NLA_ids <- as.numeric(NE_NLA_ids)
+Result: Different colored circle markers that respresent a different aggregate dataset
 
-NE_NLA_sites <- get_sites(NE_NLA_ids)
-
-#using modified plotLeaflet, found locally in "Custom Functions"
-NE_map <- plotLeaflet(NE_NLA_sites)
+### Modified `plotLeaflet()` functions
+```{r}
+plotLeaflet_unclustered <- function(object, path = "") {
+            df1 <- map(object@sites, function(x) {
+              df <- data.frame(siteid = x@siteid,
+                               sitename = x@sitename,
+                               lat = mean(st_coordinates(x@geography)[, 2]),
+                               long = mean(st_coordinates(x@geography)[, 1]),
+                               elev = x@altitude,
+                               description = x@description)
+            }) %>%
+              bind_rows()
+            map1 <- leaflet(df1) %>%
+              addProviderTiles(providers$Stamen.TerrainBackground) %>%
+              addTiles() %>%
+              addCircleMarkers(lng = df1$long, lat = df1$lat, radius = 0.5, opacity = 1,
+                               popup = paste0("<b>", df1$sitename,
+                                              "</b><br><b>Description:</b> ",
+                                              df1$description,
+                                              "<br><a href=http://apps.neotomadb.org/explorer/?siteids=",
+                                              df1$siteid,
+                                              ">Explorer Link</a>"),
+                               options = markerOptions(riseOnHover = TRUE))
+return(map1)
+}
 ```
 
 
@@ -931,6 +941,28 @@ add_dataset_leaflet <- function(ids, previousmap, circlecolor) {
 }
 ```
 
+```{r plotting NE_NLA}
+#Agg #15
+#Handle: NLA-2007
+library(readxl)
+NLA_states_excel <- read_excel("NLA_states_excel.xlsx", 
+                               col_types = c("numeric", "text", "text", 
+                                             "text", "numeric", "text", "numeric", 
+                                             "text", "text", "text", "text", "text", 
+                                             "text"))
+
+NE_NLA <- dplyr::filter(NLA_states_excel, State %in% c("Connecticut", "Maine", "Massachusetts", "New Hampshire", "New York", "New Jersey", "Rhode Island", "Vermont"))
+
+NE_NLA_ids <- NE_NLA$`Neotoma Site ID`
+
+NE_NLA_ids <- as.numeric(NE_NLA_ids)
+
+NE_NLA_sites <- get_sites(NE_NLA_ids)
+
+#using modified plotLeaflet, found locally in "Custom Functions"
+NE_map <- plotLeaflet_unclustered(NE_NLA_sites)
+```
+
 
 ```{r plotting another dataset ontop of another 3}
 #data obtained from Diatom Aggregate Dataset
@@ -952,6 +984,7 @@ ADK_CAL_ids <- c(17800,17990,720,14223,18648,18650,18688,710,711,712,23410,713,7
 NE_map <- add_dataset_leaflet(ADK_CAL_ids, previousmap = NE_map, circlecolor = '#ffff00')
 
 ```
+
 ```{r plotting another dataset ontop of another 5}
 #data obtained from Diatom Aggregate Dataset
 #Agg #9
@@ -1028,16 +1061,7 @@ NE_map <- NE_map %>% addLegend("bottomright",
   labels= c("NLA-2007","EMAP_NE1","ADK-CALIBR","NENG-PIRLA","NJ-PALEO", "GG-PONDS", "VT-PALEO", "NJ-NY-PALEO", "NE-PALEO"),
   title= "NE Diatom Surface Samples",
   opacity = 1)
-
 ```
-
-
-
-
-
-
-
-
 
 
 #Stratigraphic PLOTTING (GGPLOT, RIOJA)

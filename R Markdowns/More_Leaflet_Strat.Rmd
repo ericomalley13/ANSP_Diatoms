@@ -29,6 +29,7 @@ library(tidyverse)
 library(rioja)
 library(leaflet)
 library(leaflegend)
+library(ggforce)
 ```
 
 Work done over 21 July 2022 - 29 July 2022
@@ -202,43 +203,33 @@ strat.plot(counts2[,-1], yvar = counts$age, y.rev=TRUE, plot.line=FALSE, plot.po
 By using what I've learned from above using mostly Simon's code (altered for Diatoms) I will try and create the plot for multiple sites.
 
 ```{r, multiple sites strat, out.width = '100%'}
-#plottingSites <- ne_dl[[1:5]]
+#viewing the most prevalent taxa
+ne_taxa <- taxa(ne_dl)
 
-plottingSite1 <- ne_dl[[1]]
-plottingSite2 <- ne_dl[[2]]
-#Site 3 didn't seem like a good example
-plottingSite4 <- ne_dl[[4]]
-plottingSite5 <- ne_dl[[5]]
+ne_samp <- samples(ne_dl) %>%
+  dplyr::filter(variablename == "Asterionella formosa")
 
-#view(neotoma2::taxa(plottingSite1))
-#view(neotoma2::taxa(plottingSite2))
-#view(neotoma2::taxa(plottingSite4))
-#view(neotoma2::taxa(plottingSite5))
+#manually picked 5 sites where there was a decent amount of samples
 
-#After viewing the taxa content of the 4 sites, I found that Achnanthes marginulata
-# was present in all 4
+otter <- ne_samp %>%
+  dplyr::filter(sitename == "Otter Lake")
 
-# Now I will filter each site by Achnanthes marginulata
+nostrand <- ne_samp %>%
+  dplyr::filter(sitename == "Van Nostrand Lake")
 
-UWall_AM_counts <- samples(plottingSite1) %>% 
-  dplyr::filter(variablename == "Achnanthes marginulata")
+onondaga <- ne_samp %>%
+  dplyr::filter(sitename == "Onondaga Lake")
 
-Deep_AM_counts <- samples(plottingSite2) %>%
-  dplyr::filter(variablename == "Achnanthes marginulata")
+bigrideau <- ne_samp %>%
+  dplyr::filter(sitename == "Big Rideau Lake")
 
-Georgia_AM_counts <- samples(plottingSite4) %>%
-  dplyr::filter(variablename == "Achnanthes marginulata")
-
-Blue_AM_counts <- samples(plottingSite5) %>%
-  dplyr::filter(variablename == "Achnanthes marginulata")
-
-ALL_AM_counts <- rbind(UWall_AM_counts, Deep_AM_counts, Georgia_AM_counts, Blue_AM_counts)
+ALL_AM_counts <- rbind(otter, nostrand, onondaga, bigrideau)
 
 ```
 
 ```{r}
 ggplot_mult <- ALL_AM_counts %>%
-  ggplot(aes(y = round(ALL_AM_counts$age, digits = 0), x = value)) +
+  ggplot(aes(y = round(age, digits = 0), x = value)) +
   geom_path() + #adds lines between each value
   geom_point() + #adds points
   facet_grid(~sitename, scales = "free_x", space = "free_x") + #`facet_wrap()` is what each graph will represent. `scales` is used to give each graph a its own scaled axis (default will scale every graph to same x axis). "free_x" and "free_y" are used seperately to seperate the x axis and y axis respectively.
@@ -307,7 +298,7 @@ I also want to add more options to the popup box, such as actual abundance and W
 
 ```{r, two variable leaflet}
 #This is using the "EVERYTHING" sheet in the aggregare dataset as of 7-20-22
-DREXEL_agg <- read.csv("Aggregate Dataset CSV 7-29-22.csv")
+DREXEL_agg <- read.csv("Aggregate Datasets - Diatoms - for Neotoma 7-29-22.csv")
 colnames(DREXEL_agg) <- c("drexelid","siteid","sitename","diatom_datasetid", "wc_datasetid")
 
 with_wc_agg <- DREXEL_agg[!is.na(DREXEL_agg$wc_datasetid),]
@@ -327,7 +318,7 @@ diatom_taxa <- pc_abun(diatom_dl) %>%
   arrange(siteid)
 
 wc_variable <- samples(wc_dl) %>%
-  select('siteid', 'variablename','value') %>%
+  dplyr::select('siteid', 'variablename','value') %>%
   dplyr::filter(variablename == "pH") %>%
   arrange(siteid)
 
@@ -345,10 +336,11 @@ getColor <- function(wc_diatom) {
   }})
 }
 
-symbols <- makeSizeIcons(values = wc_diatom$count_pct,
+symbols <- makeSymbolIcons(values = wc_diatom$count_pct,
                           shape = 'circle',
                           color = 'black',
                           fillColor = getColor(wc_diatom),
+                          width = wc_diatom$count_pct,
                           #pal = numPal,
                           opacity = .7,
                           fillOpacity = .5,
@@ -389,9 +381,10 @@ map1
 ```{r, adding icon for WC variable, out.width = '100%'}
 numPal <- colorNumeric('magma', wc_diatom$value)
 
-symbols2 <- makeSizeIcons(values = wc_diatom$value,
+symbols2 <- makeSymbolIcons(values = wc_diatom$value,
                                      shape = 'plus',
                                      color = "black",
+                                      width = wc_diatom$value,
                                      pal = numPal,
                                     #fillColor = ifelse(wc_diatom$value <= 8.0,'blue','red'),
                                      opacity = 1,
@@ -848,7 +841,7 @@ new_diat_samp_2 <- diat_samp %>%
                                 "Discostella stelligera"))
 
 new_diat_samp_3 <- new_diat_samp_2 %>%
-  dplyr::filter(variablename == "Discostella stelligera") %>%
+  dplyr::filter(variablename == "Discostella stelligera")
   
 new_diat_samp_4 <- new_diat_samp_3 %>%
   group_by(siteid) %>%
@@ -874,31 +867,14 @@ new_diat_samp_5 <- new_diat_samp_4 %>%
 
 colnames(new_diat_samp_5) <- c("siteid", "taxa", "avg_abun")
 
-all_data_alt <- merge(wc_samples,new_diat_samp_5)
+all_data_alt <- merge(wc_samples,new_diat_samp_5, by = "siteid") %>%
 
 all_data <- rbind(wc_samples,new_diat_samp_4) %>%
   arrange(.,siteid)
 ###############################################################################
 
 ggplot_wc_stel <- all_data_alt %>%
-  ggplot(aes(y = avg_abun, x = value)) +
-  ggtitle("Discostella stelligera") + #adds title
-  geom_path() + #adds lines between each value
-  geom_point() + #adds points
-  facet_wrap_paginate(~variablename, scales = "free_x") + #`facet_wrap()` is what each graph will represent. `scales` is used to give each graph a its own scaled axis (default will scale every graph to same x axis). "free_x" and "free_y" are used seperately to seperate the x axis and y axis respectively.
-  labs(x = "WC", y =
-         #"Age (cal yr BP)"
-         "Abun") +
-  theme_bw()
-
-
-my_list <- list() #empty list needed to put loop output to a PDF
-
-required_n_pages <- n_pages(ggplot_wc_stel)
-
-for(i in 1:required_n_pages){
-  ggplot_wc_stel <- all_data_alt %>%
-  ggplot(aes(y = avg_abun, x = value)) +
+  ggplot(aes(y = avg_abun.y, x = value)) +
   ggtitle("Discostella stelligera") + #adds title
   #geom_path() + #adds lines between each value
   geom_point() + #adds points
@@ -917,8 +893,34 @@ for(i in 1:required_n_pages){
          "Abun") +
   theme_bw()
 
-  my_list[[i]] <- ggplot_stelligera #puts each output into a list for PDF function.
-  print(ggplot_stelligera) 
+
+my_list <- list() #empty list needed to put loop output to a PDF
+
+required_n_pages <- n_pages(ggplot_wc_stel)
+
+for(i in 1:required_n_pages){
+  ggplot_wc_stel <- all_data_alt %>%
+  ggplot(aes(y = avg_abun.y, x = value)) +
+  ggtitle("Discostella stelligera") + #adds title
+  #geom_path() + #adds lines between each value
+  geom_point() + #adds points
+  geom_smooth(method=lm, se=FALSE, col='red', size=1) +
+  #geom_bar(stat = "identity") + # adds bars
+  #coord_flip() + # makes bars horizontal
+  #geom_hline(yintercept=100) + #adds horizontal line
+  facet_wrap_paginate(~variablename, #function that splits facets into multiple pages
+                      nrow = 4, 
+                      ncol = 4, 
+                      page = 2, 
+                      scales = "free") + #`facet_wrap()` is what each graph will represent. `scales` is used to give each graph a its own scaled axis (default will scale every graph to same x axis). "free_x" and "free_y" are used seperately to seperate the x axis and y axis respectively.
+  #scale_y_reverse() +
+  labs(x = "WC", y =
+         #"Age (cal yr BP)"
+         "Abun") +
+  theme_bw()
+
+  my_list[[i]] <- ggplot_wc_stel #puts each output into a list for PDF function.
+  print(ggplot_wc_stel) 
 }
 ```
 
@@ -954,7 +956,7 @@ spatial <- sf::st_as_sf(diat_samp_1,
 worldTmean <- raster::getData('worldclim', var = 'tmean', res = 10)
 #worldBio <- raster::getData('worldclim', var = 'bio', res = 10)
 
-spatial$tmean7 <- raster::extract(worldTmax, spatial)[,7] #This adds a column to the `data.frame` `spatial`, that contains the mean July temperature for each taxon at each site (all taxa at a site will share the same value).
+spatial$tmean7 <- raster::extract(worldTmean, spatial)[,7] #This adds a column to the `data.frame` `spatial`, that contains the mean July temperature for each taxon at each site (all taxa at a site will share the same value).
 
 meansamp <- spatial %>% 
   dplyr::group_by(siteid) %>% 
@@ -969,6 +971,142 @@ ggplot_NE_taxa_tempdens <- ggplot() +
   geom_density(data = meansamp, aes(x = tmean7 / 10)) +
   xlab("Mean July Temperature") +
   ylab("Kernel Density")
+
+ggplot_NE_taxa_tempdens
+```
+
+
+## Abundance Map
+
+This map plots the distribution of a specific taxon and scales the map markers with taxon abundance.
+
+```{r, abundance function}
+#object - sites object from `get_sites`, `get_datasets`, `get_downloads`
+
+#df_with_count_pct - a dataframe that has the % abundance in a column named "count_pct."
+##The output from custom function `pc_abun()` will give this dataframe
+
+#title - title of leaflet map
+
+#save_im - to save the plot
+#path - the path to save the plot if `save_im` is equal to TRUE. Default path is cwd.
+
+plotLeaflet_abun <- function(object, df_with_count_pct, title = "Taxa % Abundance", save_im=FALSE, path = "") {
+            df1 <- map(object@sites, function(x) {
+              df <- data.frame(siteid = x@siteid,
+                               sitename = x@sitename,
+                               lat = mean(st_coordinates(x@geography)[, 2]),
+                               long = mean(st_coordinates(x@geography)[, 1]),
+                               elev = x@altitude,
+                               description = x@description)
+            }) %>%
+              bind_rows()
+            numPal <- colorNumeric('viridis', df_with_count_pct$count_pct)
+            symbols <- makeSymbolIcons(values = df_with_count_pct$count_pct,
+                                     shape = 'diamond',
+                                     width = df_with_count_pct$count_pct,
+                                     color = 'black',
+                                     pal = numPal,
+                                     opacity = .5,
+                                     baseSize = 4)
+            map1 <- leaflet(df1) %>%
+              addProviderTiles(providers$Stamen.TerrainBackground) %>%
+              addTiles() %>%
+              addMarkers(icon = symbols, lng = df_with_count_pct$long, lat = df_with_count_pct$lat,
+                               popup = paste0("<b>", df1$sitename,
+                                              "</b><br><b>Description:</b> ",
+                                              df1$description,
+                                              "<br><a href=http://apps.neotomadb.org/explorer/?siteids=",
+                                              df1$siteid,
+                                              ">Explorer Link</a>"),
+                               options = markerOptions(riseOnHover = TRUE)) %>%
+              addLegendSize(values = df_with_count_pct$count_pct,
+                pal = numPal,
+                title = title,
+                baseSize = 4,
+                shape = 'diamond',
+                orientation = 'horizontal',
+                opacity = .5,
+                fillOpacity = .3,
+                position = 'bottomright',
+                breaks = 5)
+            
+            if (save_im == TRUE) {
+              mapshot(map1, file = path)
+            }
+            map1
+}
+```
+
+
+### Example using Abundance map
+```{r}
+taxa_dl <- get_sites(taxa = "Eunotia exigua") %>% #returns 25 sites as default
+  get_datasets() %>%
+  neotoma2::filter(datasettype == "diatom surface sample") %>%
+  get_downloads()
+
+taxa_abun <- pc_abun(taxa_dl) %>%
+  dplyr::filter(taxa == "Eunotia exigua")
+
+taxa_group <- taxa_abun %>% 
+  group_by(siteid) %>%
+  summarise(count_pct = mean(count_pct))
+
+new_taxa_abun <- taxa_abun %>%
+  dplyr::select(-count,-count_pct)
+
+merge <- left_join(taxa_group, new_taxa_abun)
+
+taxa_abun <- merge[!duplicated(merge$siteid), ] 
+
+plotLeaflet_abun(taxa_dl, df_with_count_pct = taxa_abun, title = "E. exigua % abundance")
+```
+
+```{r,trying to figure out issue}
+df1 <- map(taxa_dl@sites, function(x) {
+              df <- data.frame(siteid = x@siteid,
+                               sitename = x@sitename,
+                               lat = mean(st_coordinates(x@geography)[, 2]),
+                               long = mean(st_coordinates(x@geography)[, 1]),
+                               elev = x@altitude,
+                               description = x@description)
+            }) %>%
+              bind_rows()
+            numPal <- colorNumeric('viridis', taxa_abun$count_pct)
+            symbols <- makeSymbolsSize(values = taxa_abun$count_pct,
+                                     shape = 'diamond',
+                                     color = 'black',
+                                     fillColor = ~numPal(taxa_abun),
+                                     opacity = .5,
+                                     baseSize = 4)
+            map1 <- leaflet(df1) %>%
+              addProviderTiles(providers$Stamen.TerrainBackground) %>%
+              addTiles() %>%
+              addMarkers(icon = symbols, lng = taxa_abun$long, lat = taxa_abun$lat,
+                               popup = paste0("<b>", df1$sitename,
+                                              "</b><br><b>Description:</b> ",
+                                              df1$description,
+                                              "<br><a href=http://apps.neotomadb.org/explorer/?siteids=",
+                                              df1$siteid,
+                                              ">Explorer Link</a>"),
+                               options = markerOptions(riseOnHover = TRUE)) %>%
+              addLegendSize(values = taxa_abun$count_pct,
+                pal = numPal,
+                title = title,
+                baseSize = 4,
+                shape = 'diamond',
+                orientation = 'horizontal',
+                opacity = .5,
+                fillOpacity = .3,
+                position = 'bottomright',
+                breaks = 5)
+            
+            if (save_im == TRUE) {
+              mapshot(map1, file = path)
+            }
+            map1
+
 
 
 ```
