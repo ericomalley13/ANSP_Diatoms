@@ -879,7 +879,7 @@ write.csv(final, file = "NLA_states_csv.csv")
 
 ## NE AGGREGATE DATASET DISTRIBUTION
 
-Result: Different colored circle markers that respresent a different aggregate dataset
+Result: Different colored circle markers that represent a different aggregate dataset
 
 ### Modified `plotLeaflet()` functions
 ```{r}
@@ -1035,7 +1035,7 @@ NE_map <- add_dataset_leaflet(VT_ids, previousmap = NE_map, circlecolor = '#0000
 #Agg #21
 #Handle: NJ-NY-PL
 
-NJ_NY_PL_ids <- c(13027,13067,13028,13029,13030,13031,13032,13033,13034,13035,13070,13036,13071,13037,13038,13074,13039,13072,13075,13076,13078,13080)
+NJ_NY_PL_ids <- c(13027,13067,13028,13029,13030,13031,13032,13033,13034,13035,13070,13036,13071,13037,13038,13074,13039,13072,13075,13076,13078,13079)
 
 NE_map <- add_dataset_leaflet(NJ_NY_PL_ids, previousmap = NE_map, circlecolor = '#00ffff')
 

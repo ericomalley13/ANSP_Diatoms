@@ -924,7 +924,7 @@ for(i in 1:required_n_pages){
 }
 ```
 
-```{r}
+```{r, warning = FALSE}
 #[source](https://open.neotomadb.org/EPD_binder/simple_workflow.html)
 #[worldclim format](https://worldclim.com/formats1)
 library(raster)
@@ -983,7 +983,7 @@ This map plots the distribution of a specific taxon and scales the map markers w
 ```{r, abundance function}
 #object - sites object from `get_sites`, `get_datasets`, `get_downloads`
 
-#df_with_count_pct - a dataframe that has the % abundance in a column named "count_pct."
+#taxa_abun - a dataframe that has the % abundance in a column named "count_pct."
 ##The output from custom function `pc_abun()` will give this dataframe
 
 #title - title of leaflet map
@@ -991,7 +991,7 @@ This map plots the distribution of a specific taxon and scales the map markers w
 #save_im - to save the plot
 #path - the path to save the plot if `save_im` is equal to TRUE. Default path is cwd.
 
-plotLeaflet_abun <- function(object, df_with_count_pct, title = "Taxa % Abundance", save_im=FALSE, path = "") {
+plotLeaflet_abun <- function(object, taxa_abun, title = "Taxa % Abundance", save_im=FALSE, path = "") {
             df1 <- map(object@sites, function(x) {
               df <- data.frame(siteid = x@siteid,
                                sitename = x@sitename,
@@ -1000,19 +1000,18 @@ plotLeaflet_abun <- function(object, df_with_count_pct, title = "Taxa % Abundanc
                                elev = x@altitude,
                                description = x@description)
             }) %>%
-              bind_rows()
-            numPal <- colorNumeric('viridis', df_with_count_pct$count_pct)
-            symbols <- makeSymbolIcons(values = df_with_count_pct$count_pct,
+              bind_rows() %>%
+                arrange(siteid)
+            symbols <- makeSymbolsSize(values = taxa_abun$count_pct,
                                      shape = 'diamond',
-                                     width = df_with_count_pct$count_pct,
                                      color = 'black',
-                                     pal = numPal,
+                                     fillColor = 'blue',
                                      opacity = .5,
-                                     baseSize = 4)
+                                     baseSize = 5.5)
             map1 <- leaflet(df1) %>%
               addProviderTiles(providers$Stamen.TerrainBackground) %>%
               addTiles() %>%
-              addMarkers(icon = symbols, lng = df_with_count_pct$long, lat = df_with_count_pct$lat,
+              addMarkers(icon = symbols, lng = taxa_abun$long, lat = taxa_abun$lat,
                                popup = paste0("<b>", df1$sitename,
                                               "</b><br><b>Description:</b> ",
                                               df1$description,
@@ -1020,10 +1019,11 @@ plotLeaflet_abun <- function(object, df_with_count_pct, title = "Taxa % Abundanc
                                               df1$siteid,
                                               ">Explorer Link</a>"),
                                options = markerOptions(riseOnHover = TRUE)) %>%
-              addLegendSize(values = df_with_count_pct$count_pct,
-                pal = numPal,
-                title = title,
-                baseSize = 4,
+              addLegendSize(values = taxa_abun$count_pct,
+                fillColor = 'blue',
+                color = 'black',
+                title = unique(taxa_abun$taxa),
+                baseSize = 5.5,
                 shape = 'diamond',
                 orientation = 'horizontal',
                 opacity = .5,
@@ -1058,55 +1058,8 @@ new_taxa_abun <- taxa_abun %>%
 
 merge <- left_join(taxa_group, new_taxa_abun)
 
-taxa_abun <- merge[!duplicated(merge$siteid), ] 
+taxa_abun <- merge[!duplicated(merge$siteid), ] %>%
+  arrange(siteid)
 
-plotLeaflet_abun(taxa_dl, df_with_count_pct = taxa_abun, title = "E. exigua % abundance")
-```
-
-```{r,trying to figure out issue}
-df1 <- map(taxa_dl@sites, function(x) {
-              df <- data.frame(siteid = x@siteid,
-                               sitename = x@sitename,
-                               lat = mean(st_coordinates(x@geography)[, 2]),
-                               long = mean(st_coordinates(x@geography)[, 1]),
-                               elev = x@altitude,
-                               description = x@description)
-            }) %>%
-              bind_rows()
-            numPal <- colorNumeric('viridis', taxa_abun$count_pct)
-            symbols <- makeSymbolsSize(values = taxa_abun$count_pct,
-                                     shape = 'diamond',
-                                     color = 'black',
-                                     fillColor = ~numPal(taxa_abun),
-                                     opacity = .5,
-                                     baseSize = 4)
-            map1 <- leaflet(df1) %>%
-              addProviderTiles(providers$Stamen.TerrainBackground) %>%
-              addTiles() %>%
-              addMarkers(icon = symbols, lng = taxa_abun$long, lat = taxa_abun$lat,
-                               popup = paste0("<b>", df1$sitename,
-                                              "</b><br><b>Description:</b> ",
-                                              df1$description,
-                                              "<br><a href=http://apps.neotomadb.org/explorer/?siteids=",
-                                              df1$siteid,
-                                              ">Explorer Link</a>"),
-                               options = markerOptions(riseOnHover = TRUE)) %>%
-              addLegendSize(values = taxa_abun$count_pct,
-                pal = numPal,
-                title = title,
-                baseSize = 4,
-                shape = 'diamond',
-                orientation = 'horizontal',
-                opacity = .5,
-                fillOpacity = .3,
-                position = 'bottomright',
-                breaks = 5)
-            
-            if (save_im == TRUE) {
-              mapshot(map1, file = path)
-            }
-            map1
-
-
-
+plotLeaflet_abun(taxa_dl, taxa_abun = taxa_abun, title = "E. exigua % abundance")
 ```
