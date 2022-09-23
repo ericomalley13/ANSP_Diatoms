@@ -1,0 +1,36 @@
+---
+title: "Don's Testing Ground"
+author: "Don Charles"
+date: "23 September 2022"
+output: 
+  rmarkdown::html_vignette:
+    toc: true
+    toc_depth: 3
+vignette: >
+  %\VignetteIndexEntry{The neotoma2 R Package}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  eval = TRUE
+)
+```
+
+```{r setup, message=FALSE}
+library(neotoma2)
+library(dplyr)
+library(purrr)
+library(sf)
+library(tidyverse)
+library(rioja)
+library(leaflet)
+library(leaflegend)
+library(ggforce)
+
+The purpose of this document is to provide a place for Don Charles to try out new / revised code.  Started 23 September 2022.
+
+Code to get data on Aggregate datasets.  Primarily to fill out Aggregate Datasets Excel file.  Can also use to get selected data on aggregate datasets returned by the samples() function. 
