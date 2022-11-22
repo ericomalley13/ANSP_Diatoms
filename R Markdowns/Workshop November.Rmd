@@ -1,0 +1,330 @@
+---
+title: "Workshop November"
+author: "Eric O'Malley"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r setup, message=FALSE}
+library(neotoma2)
+library(dplyr)
+library(purrr)
+library(sf)
+library(tidyverse)
+library(rioja)
+library(leaflet)
+library(leaflegend)
+library(ggforce)
+```
+
+
+Diatom taxa that I am interested in working on are Cyclotella stelligera + Discotella stelligera ( all %stelligera%), Aulacoseira ambigua + Melosira ambigua, Aulacoseira granulata + Melosira granulata, and Fragilaria crotonensis.
+
+E - Distribution of one or more taxa - map - size of symbol represents abundance
+
+**PROBLEM: error in retrieving `samples()` when there is multiple default chronologies.
+
+```{r data retrieval, warning=FALSE}
+# polygon obtained from http://geojson.io/#map=5/42.049/-75.894
+ne <- '{"type": "Polygon",
+        "coordinates": [[
+            [-80.5517578125,
+              39.70718665682654],
+            [-66.7529296875,
+              39.70718665682654],
+            [-66.7529296875,
+              47.517200697839414],
+            [-80.5517578125,
+              47.517200697839414],
+            [-80.5517578125,
+              39.70718665682654]]]}'
+
+
+ne_datasets <- neotoma2::get_datasets(loc = ne[1], datasettype = "diatom surface sample", all_data = TRUE)
+
+ne_dl <- get_downloads(ne_datasets, all_data = TRUE)
+
+allSamp <- samples(head(ne_dl,320))
+
+
+ne_dl_new <- ne_dl[-321]#problem sites
+ne_dl_new_2 <- ne_dl_new[-622]#problem sites
+
+allSamp <- samples(head(ne_dl_new_2,800))
+
+length(unique(allSamp$siteid))
+view(allSamp)
+
+```
+
+```{r percent abundance function, echo=FALSE}
+pc_abun <- function(dl_object) {
+  
+  samp <- samples(dl_object)
+  taxa <- samp$variablename
+  count <- samp$value
+  sitename <- samp$sitename
+  datasetid <- samp$datasetid
+  siteid <- samp$siteid
+  sampleid <- samp$sampleid
+  lat <- samp$lat
+  long <- samp$long
+  
+  
+  countDF <- data.frame(lat, long, siteid, sitename, datasetid, sampleid, taxa, count) %>%
+    group_by(sampleid) %>%
+    mutate(count_pct = count*100 / sum(count))
+  return(countDF)
+}
+```
+
+```{r, warning=FALSE}
+diatom_taxa <- pc_abun(ne_dl_new_2) %>%
+  dplyr::filter(taxa == "Fragilaria crotonensis") %>%
+  arrange(siteid)
+```
+
+```{r, out.width = '100%'}
+# https://roh.engineering/posts/2021/05/map-symbols-and-size-legends-for-leaflet/
+
+numPal <- colorNumeric('viridis', (diatom_taxa$count_pct))
+leaflet(diatom_taxa) %>%
+  addTiles() %>%
+  addSymbolsSize(values = ~count_pct,
+                 lat = ~lat, 
+                 lng = ~long,
+                 shape = 'circle',
+                 color = ~numPal(count_pct),
+                 fillColor = ~numPal(count_pct),
+                 opacity = .5,
+                 baseSize = 7,
+                 popup = paste0("<b>", diatom_taxa$sitename,
+                                              "</b><br><b>% Abundance:</b> ",
+                                              diatom_taxa$count_pct,
+                                              "<br><a href=http://apps.neotomadb.org/explorer/?siteids=",
+                                              diatom_taxa$siteid,
+                                              ">Explorer Link</a>"),
+                               options = markerOptions(riseOnHover = TRUE)) %>%
+  addLegendSize(
+    values = ~count_pct,
+    pal = numPal,
+    title = '% abundance of F. crotonensis',
+    baseSize = 7,
+    shape = 'circle',
+    orientation = 'horizontal',
+    opacity = .5,
+    fillOpacity = .3,
+    position = 'bottomright',
+    breaks = 5)
+```
+
+
+
+
+
+
+
+E - Distribution of taxon along environmental gradients; multi-facet - water chem chars
+```{r, two variable leaflet}
+#This is using the "EVERYTHING" sheet in the aggregate dataset as of 7-20-22
+DREXEL_agg <- read.csv("Aggregate Datasets - Diatoms - for Neotoma 7-29-22.csv")
+colnames(DREXEL_agg) <- c("drexelid","siteid","sitename","diatom_datasetid", "wc_datasetid")
+
+with_wc_agg <- DREXEL_agg[!is.na(DREXEL_agg$wc_datasetid),]
+
+diatom_datasetid <- tail(with_wc_agg$diatom_datasetid,400) #for some reason I got an error trying to do `head()` instead of `tail()`. Possible wrong datasetid towards beginning.
+
+wc_datasetid <- tail(with_wc_agg$wc_datasetid,400)
+
+diatom_dl <- get_datasets(diatom_datasetid,all_data = TRUE) %>%
+  get_downloads()
+
+wc_dl <- get_datasets(wc_datasetid,all_data = TRUE) %>%
+  get_downloads()
+
+diat_taxa <- pc_abun(diatom_dl) %>%
+  dplyr::filter(taxa == "Fragilaria crotonensis") %>%
+  arrange(siteid)
+
+diat_sites <- diat_taxa$siteid
+
+wc_new <- get_sites(diat_sites) %>%
+  get_datasets(., datasettype = 'water chemistry') %>%
+  get_downloads()
+
+wc_variable <- samples(wc_new) %>%
+  dplyr::filter(element == "field") %>%
+  dplyr::select('siteid', 'variablename','value') %>%
+  dplyr::filter(variablename == "pH") %>%
+  arrange(siteid)
+
+wc_diatom <- merge(diat_taxa, wc_variable)
+```
+
+```{r}
+
+sumn <- get_datasets(datasettype = "diatom surface sample", all_data=TRUE) %>%
+  get_downloads() %>%
+  pc_abun() %>%
+  dplyr::filter(taxa == "Fragilaria crotonensis") %>%
+  arrange(siteid)
+
+diat_sites <- unique(diatom_taxa$siteid)
+
+sumn_wc <- get_sites(diat_sites) %>%
+  get_datasets() %>%
+  neotoma2::filter(datasettype == "water chemistry") %>%
+  get_downloads()
+
+wc_variable <- samples(sumn_wc) %>%
+  dplyr::select('siteid', 'variablename','value') %>%
+  dplyr::filter(variablename == "Total Phosphorus (unfiltered)") %>%
+  arrange(siteid)
+
+diatom_taxa %>%
+dplyr::filter(depth < 1.1) %>%
+view()
+
+wc_diatom <- merge(diatom_taxa, wc_variable)
+```
+
+
+
+
+**OLD**
+```{r, editing plotleaflet function, out.width = '100%'}
+getColor <- function(wc_diatom) {
+  sapply(wc_diatom$value, function(value) {
+  if(value <= 8.2) {
+    "red"
+  } else {
+    "blue"
+  }})
+}
+
+symbols <- makeSymbolIcons(values = wc_diatom$count_pct,
+                          shape = 'circle',
+                          color = 'black',
+                          fillColor = getColor(wc_diatom),
+                          width = wc_diatom$count_pct,
+                          #pal = numPal,
+                          opacity = .7,
+                          fillOpacity = .5,
+                          baseSize = 15)
+            
+             map1 <- leaflet(wc_diatom) %>%
+              addProviderTiles(providers$Stamen.TerrainBackground) %>%
+              addTiles() %>%
+              addMarkers(icon = symbols, lng = wc_diatom$long, lat = wc_diatom$lat,
+                               popup = paste0("<b>", wc_diatom$sitename,
+                                              "</b><br><b>pH:</b> ",
+                                              wc_diatom$value,
+                                              "<br><a href=http://apps.neotomadb.org/explorer/?siteids=",
+                                              wc_diatom$siteid,
+                                              ">Explorer Link</a>"),
+                               options = markerOptions(riseOnHover = TRUE)) %>%
+              addLegendSize(values = wc_diatom$count_pct,
+                fillColor = c('white'),
+                color = 'black',
+                #pal = numPal,
+                title = "A. minutissima % Abundance",
+                baseSize = 15,
+                shape = 'circle',
+                orientation = 'horizontal',
+                opacity = .7,
+                fillOpacity = .3,
+                position = 'bottomright',
+                breaks = 5) #%>%
+               # addLegend(values = c())
+             
+map1
+```
+
+
+
+**NEW**
+```{r}
+getColor <- function(wc_diatom) {
+  sapply(wc_diatom$value, function(value) {
+  if(value <= 8.2) {
+    "red"
+  } else {
+    "blue"
+  }})
+}
+leaflet(wc_diatom) %>%
+  addTiles() %>%
+  addSymbolsSize(values = ~count_pct,
+                 lat = ~lat, 
+                 lng = ~long,
+                 shape = 'plus',
+                 color = 'black',
+                 fillColor = ~getColor(value),
+                 opacity = .5,
+                 baseSize = 10) %>%
+  addLegendSize(
+    values = wc_diatom$count_pct,
+    color = 'black',
+    title = 'Depth',
+    shape = 'plus',
+    orientation = 'horizontal',
+    opacity = .5,
+    fillOpacity = 0,
+    breaks = 5,
+    position = 'bottomright') %>%
+  addLegendNumeric(
+    pal = numPal, 
+    title = 'Magnitude',
+    shape = 'stadium',
+    values = quakes$mag, 
+    fillOpacity = .5,
+    decreasing = TRUE,
+    position = 'bottomright')
+
+```
+
+```{r}
+numPal <- colorNumeric('magma', wc_diatom$value)
+leaflet(wc_diatom) %>%
+  addTiles() %>%
+  addSymbolsSize(values = ~count_pct,
+                 lat = ~lat, 
+                 lng = ~long,
+                 shape = 'circle',
+                 color = 'black',
+                 fillColor = ~numPal(value),
+                 opacity = .5,
+                 baseSize = 10) %>%
+  addLegendSize(
+    values = wc_diatom$count_pct,
+    color = 'black',
+    title = '% Abundance F. crotonensis',
+    shape = 'circle',
+    orientation = 'horizontal',
+    opacity = .5,
+    fillOpacity = 0,
+    breaks = 5,
+    position = 'bottomright') %>%
+  addLegendNumeric(
+    pal = numPal, 
+    title = 'Total Phosphorus',
+    shape = 'stadium',
+    values = wc_diatom$value, 
+    fillOpacity = .5,
+    decreasing = TRUE,
+    position = 'bottomright')
+
+```
+
+
+
+E - Distribution of taxa along climate gradients; multi-facet - multiple taxa vs temp
+
+
+
+
+E - Strat graphs of taxa in cores - Many cores, one or a few taxa
